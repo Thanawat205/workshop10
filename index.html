@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillTrust Academy | Digital Certificates</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; font: 15px/1.55 Arial, sans-serif; color: #222; background: #f4f6f8; }
+    .container { max-width: 1000px; margin: auto; }
+    header, .panel { padding: 24px 28px; border-radius: 10px; margin-bottom: 20px; }
+    header { background: #e8f4ed; }
+    .panel { background: white; box-shadow: 0 2px 8px #0000000d; }
+    h1 { color: #075b35; margin: 0 0 12px; }
+    h2, h3 { margin: 0 0 8px; }
+    label { display: block; font-weight: bold; margin: 12px 0 5px; }
+    input, textarea { display: block; width: 100%; padding: 10px; border: 1px solid #bbb; border-radius: 6px; font: inherit; }
+    textarea { min-height: 75px; resize: vertical; }
+    button { margin: 12px 6px 0 0; padding: 10px 14px; border: 0; border-radius: 6px; color: white; background: #075b35; font: inherit; font-weight: bold; cursor: pointer; }
+    button.secondary { background: #52616b; }
+    button.danger { background: #a22130; }
+    button:disabled { opacity: .6; cursor: wait; }
+    .muted { color: #555; font-size: 14px; }
+    .error { color: #a22130; }
+    .success { color: #075b35; }
+    .record { margin-top: 12px; padding: 14px; border: 1px solid #ddd; border-radius: 6px; }
+    .record p { margin: 5px 0; white-space: pre-wrap; }
+    .qr { margin-top: 10px; }
+    .qr canvas, .qr img { margin: 12px 0; border: 16px solid white; }
+    p, a { overflow-wrap: anywhere; }
+    @media (max-width: 600px) { body { padding: 12px; } header, .panel { padding: 16px; } }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>SkillTrust Academy</h1>
+    <p>ระบบออกและตรวจสอบใบรับรองดิจิทัล</p>
+    <button id="connectButton" type="button">Connect Wallet</button>
+    <p id="walletStatus" class="muted">ยังไม่ได้เชื่อมต่อ MetaMask · Sepolia Testnet</p>
+    <p id="walletMessage" role="status"></p>
+    <p class="muted">66073501 ธนวรรธ ไคล้สา</p>
+    <p class="muted">66062728 ศิกเษณย์ ศรุติสุต</p>
+  </header>
+
+  <section class="panel">
+    <h2>ตรวจสอบใบรับรอง</h2>
+    <form id="verifyForm">
+      <label for="verifyCode">รหัสใบรับรอง</label>
+      <input id="verifyCode" maxlength="40" placeholder="เช่น CERT-001" required>
+      <label for="verifyFile">ไฟล์ PDF ที่ต้องการเทียบ (ถ้ามี)</label>
+      <input id="verifyFile" type="file" accept=".pdf,application/pdf">
+      <button>ตรวจสอบ</button>
+    </form>
+    <p class="muted">ค้นหาด้วยรหัสหรือสแกน QR ด้วยกล้องมือถือเพื่อเปิดหน้านี้ได้โดยไม่ต้องเชื่อม Wallet</p>
+    <div id="verifyResult" aria-live="polite"></div>
+  </section>
+
+  <section class="panel">
+    <h2>ใบรับรองของฉัน</h2>
+    <button id="dashboardButton" type="button" class="secondary">โหลดรายการ</button>
+    <div id="dashboard" aria-live="polite"><p class="muted">เชื่อม Wallet ของผู้รับเพื่อดูรายการ</p></div>
+  </section>
+
+  <section class="panel" id="issuePanel" hidden>
+    <h2>ออกใบรับรอง</h2>
+    <form id="issueForm">
+      <label for="issueCode">รหัสใบรับรอง</label>
+      <input id="issueCode" maxlength="40" placeholder="เช่น CERT-001" required>
+      <button id="qrButton" type="button" class="secondary">สร้าง QR สำหรับใบรับรอง</button>
+      <div id="issueQr" aria-live="polite"></div>
+      <label for="issueCourse">รหัสหลักสูตร</label>
+      <input id="issueCourse" maxlength="40" placeholder="เช่น AI-101" required>
+      <label for="issueRecipient">Wallet ของผู้รับ</label>
+      <input id="issueRecipient" placeholder="0x..." required>
+      <label for="issueFile">ไฟล์ PDF ฉบับสุดท้าย</label>
+      <input id="issueFile" type="file" accept=".pdf,application/pdf" required>
+      <p class="muted">ใส่ QR ใน PDF ให้เรียบร้อยก่อนเลือกไฟล์ หากต้องการพิมพ์ QR บนใบรับรอง</p>
+      <button>ออกใบรับรอง</button>
+    </form>
+    <p id="issueMessage" role="status"></p>
+  </section>
+
+  <div id="adminPanels" hidden>
+    <section class="panel">
+      <h2>ลงทะเบียนหลักสูตร</h2>
+      <form id="courseForm">
+        <label for="courseCode">รหัสหลักสูตร</label>
+        <input id="courseCode" maxlength="40" placeholder="AI-101" required>
+        <label for="courseTitle">ชื่อหลักสูตร</label>
+        <input id="courseTitle" required>
+        <label for="courseDetails">รายละเอียดหลักสูตรที่เผยแพร่ได้</label>
+        <textarea id="courseDetails" required></textarea>
+        <p class="muted">ข้อมูลหลักสูตรนี้จะเผยแพร่บนบล็อกเชนสาธารณะ</p>
+        <button>สร้างหลักสูตร</button>
+      </form>
+      <p id="courseMessage" role="status"></p>
+    </section>
+
+    <section class="panel">
+      <h2>จัดการสิทธิ์ผู้ออกใบรับรอง</h2>
+      <form id="issuerForm">
+        <label for="issuerAddress">Wallet ของผู้ออกใบรับรอง</label>
+        <input id="issuerAddress" placeholder="0x..." required>
+        <button value="grant">ให้สิทธิ์</button>
+        <button value="remove" class="secondary">ถอนสิทธิ์</button>
+      </form>
+      <p id="issuerMessage" role="status"></p>
+    </section>
+
+    <section class="panel">
+      <h2>เพิกถอนใบรับรอง</h2>
+      <form id="revokeForm">
+        <label for="revokeCode">รหัสใบรับรอง</label>
+        <input id="revokeCode" maxlength="40" required>
+        <button class="danger">เพิกถอน</button>
+      </form>
+      <p id="revokeMessage" role="status"></p>
+    </section>
+  </div>
+</div>
+
+<script>
+  const INFURA_URL = "https://sepolia.infura.io/v3/fbe6510ef5b24166b46007975d04a463";
+  const CONTRACT_ADDRESS = "0xa2d8938b63886c1f82de290da942dcd8a0f9f638";
+  const CHAIN_ID = 11155111n;
+  const ABI = [
+    "function admin() view returns (address)",
+    "function authorizedIssuers(address) view returns (bool)",
+    "function setIssuer(address account, bool allowed)",
+    "function createCourse(string code, string title, string details)",
+    "function issueCertificate(string code, string courseCode, address recipient, bytes32 documentHash)",
+    "function revokeCertificate(string code)",
+    "function getCourse(string code) view returns (tuple(string title, string details))",
+    "function getCertificate(string code) view returns (tuple(string courseCode, address recipient, address issuer, bytes32 documentHash, uint256 issuedAt, uint256 revokedAt))",
+    "function certificateCount(address recipient) view returns (uint256)",
+    "function certificateCodeAt(address recipient, uint256 index) view returns (string)"
+  ];
+
+  const $ = id => document.getElementById(id);
+  const value = id => $(id).value.trim();
+  let readContract;
+  let walletProvider;
+  let writeContract;
+  let account;
+  let transactionPending = false;
+
+  function readConnection() {
+    if (!window.ethers) throw new Error("โหลด ethers.js ไม่สำเร็จ");
+    if (INFURA_URL.includes("YOUR_INFURA_API_KEY") || !ethers.isAddress(CONTRACT_ADDRESS)) {
+      throw new Error("ตั้งค่า INFURA_URL และ CONTRACT_ADDRESS ใน index.html ก่อนใช้งาน");
+    }
+    if (!readContract) {
+      const provider = new ethers.JsonRpcProvider(INFURA_URL, "sepolia");
+      readContract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+    }
+    return readContract;
+  }
+
+  function message(target, text, type = "") {
+    target.textContent = text;
+    target.className = type;
+  }
+
+  function errorText(error) {
+    return error.reason || error.shortMessage || error.message;
+  }
+
+  function addText(parent, tag, text, className = "") {
+    const element = document.createElement(tag);
+    element.textContent = text;
+    element.className = className;
+    parent.append(element);
+    return element;
+  }
+
+  function codeFrom(raw) {
+    const code = raw.trim().toUpperCase();
+    if (!/^[A-Z0-9_-]{1,40}$/.test(code)) throw new Error("รหัสต้องมี 1–40 ตัว ใช้ A–Z, 0–9, - หรือ _");
+    return code;
+  }
+
+  function addressFrom(id) {
+    const address = ethers.getAddress(value(id));
+    if (address === ethers.ZeroAddress) throw new Error("กรุณาระบุ Wallet Address ที่ใช้งานได้");
+    return address;
+  }
+
+  async function hashPdf(file) {
+    if (!file) throw new Error("กรุณาเลือกไฟล์ PDF");
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (new TextDecoder().decode(bytes.subarray(0, 5)) !== "%PDF-") throw new Error("ไฟล์นี้ไม่ใช่ PDF");
+    return ethers.sha256(bytes);
+  }
+
+  function formatTime(timestamp) {
+    return new Date(Number(timestamp) * 1000).toLocaleString("th-TH");
+  }
+
+  async function connectWallet() {
+    const button = $("connectButton");
+    const target = $("walletMessage");
+    button.disabled = true;
+    try {
+      const contract = readConnection();
+      if (!window.ethereum) throw new Error("กรุณาติดตั้ง MetaMask");
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      if ((await provider.getNetwork()).chainId !== CHAIN_ID) throw new Error("เลือก Sepolia ใน MetaMask แล้วลองใหม่");
+      await window.ethereum.request({ method: "eth_requestAccounts" });
+      const signer = await provider.getSigner();
+      const address = await signer.getAddress();
+      const [admin, canIssue] = await Promise.all([contract.admin(), contract.authorizedIssuers(address)]);
+      account = address;
+      walletProvider = provider;
+      writeContract = contract.connect(signer);
+      $("walletStatus").textContent = "Sepolia · " + account;
+      $("issuePanel").hidden = !canIssue;
+      $("adminPanels").hidden = admin.toLowerCase() !== address.toLowerCase();
+      message(target, "เชื่อมต่อ MetaMask แล้ว", "success");
+      await loadDashboard();
+    } catch (error) {
+      message(target, errorText(error), "error");
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function transact(button, target, action) {
+    if (transactionPending) return message(target, "กำลังรอธุรกรรมก่อนหน้า", "error");
+    transactionPending = true;
+    const form = button.form;
+    const buttons = Array.from(form.querySelectorAll("button")).filter(item => !item.disabled);
+    buttons.forEach(item => { item.disabled = true; });
+    try {
+      if (!writeContract) throw new Error("เชื่อม MetaMask ก่อนส่งธุรกรรม");
+      if ((await walletProvider.getNetwork()).chainId !== CHAIN_ID) throw new Error("เลือก Sepolia ใน MetaMask");
+      message(target, "ตรวจสอบและยืนยันธุรกรรมใน MetaMask");
+      const transaction = await action();
+      message(target, "กำลังรอยืนยัน " + transaction.hash);
+      await transaction.wait();
+      message(target, "บันทึกสำเร็จ " + transaction.hash, "success");
+      return true;
+    } catch (error) {
+      message(target, errorText(error), "error");
+      return false;
+    } finally {
+      buttons.forEach(item => { item.disabled = false; });
+      transactionPending = false;
+    }
+  }
+
+  function showQr(target, code) {
+    if (!/^https?:$/.test(location.protocol)) throw new Error("เปิดเว็บผ่าน HTTP หรือ HTTPS ก่อนสร้างลิงก์ QR");
+    const url = new URL(location.pathname, location.origin);
+    url.searchParams.set("cert", code);
+    target.replaceChildren();
+    const link = addText(target, "a", "เปิดหน้าตรวจสอบ " + code);
+    link.href = url.href;
+    const qr = addText(target, "div", "", "qr");
+    if (!window.QRCode) {
+      addText(qr, "p", "โหลดไลบรารี QR ไม่สำเร็จ สามารถใช้ลิงก์ด้านบนได้", "error");
+      return;
+    }
+    try {
+      new QRCode(qr, { text: url.href, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
+      addText(qr, "p", "สแกนจากมือถือผ่าน URL ที่มือถือเข้าถึงได้");
+    } catch (error) {
+      addText(qr, "p", "สร้าง QR ไม่สำเร็จ ลองใช้ URL เว็บที่สั้นลง", "error");
+    }
+  }
+
+  function renderCertificate(parent, code, certificate, course) {
+    const card = addText(parent, "div", "", "record");
+    addText(card, "h3", code);
+    const revoked = certificate.revokedAt !== 0n;
+    addText(card, "p", revoked ? "สถานะ: เพิกถอนแล้ว" : "สถานะ: ใช้งานได้", revoked ? "error" : "success");
+    addText(card, "p", "หลักสูตร: " + certificate.courseCode + " · " + course.title);
+    addText(card, "p", course.details);
+    addText(card, "p", "วันที่ออก: " + formatTime(certificate.issuedAt));
+    if (revoked) addText(card, "p", "วันที่เพิกถอน: " + formatTime(certificate.revokedAt));
+    addText(card, "p", "Wallet ผู้ออก: " + certificate.issuer, "muted");
+    addText(card, "p", "SHA-256: " + certificate.documentHash, "muted");
+    return card;
+  }
+
+  async function verify() {
+    const result = $("verifyResult");
+    const file = $("verifyFile").files[0];
+    message(result, "กำลังตรวจสอบ...");
+    try {
+      const code = codeFrom(value("verifyCode"));
+      const contract = readConnection();
+      const certificate = await contract.getCertificate(code);
+      if (certificate.issuer === ethers.ZeroAddress) return message(result, "ไม่พบรหัสใบรับรองนี้", "error");
+      const course = await contract.getCourse(certificate.courseCode);
+      result.replaceChildren();
+      const card = renderCertificate(result, code, certificate, course);
+      if (!file) {
+        addText(card, "p", "เลือกไฟล์ PDF เพื่อเทียบกับแฮชที่บันทึกไว้", "muted");
+        return;
+      }
+      try {
+        const matches = await hashPdf(file) === certificate.documentHash;
+        addText(card, "p", matches ? "ไฟล์ PDF ตรงกับแฮชที่บันทึกไว้" : "ไฟล์ PDF ไม่ตรงกับแฮชที่บันทึกไว้", matches ? "success" : "error");
+      } catch (error) {
+        addText(card, "p", errorText(error), "error");
+      }
+    } catch (error) {
+      message(result, errorText(error), "error");
+    }
+  }
+
+  async function loadDashboard() {
+    const result = $("dashboard");
+    const button = $("dashboardButton");
+    if (!account) return message(result, "เชื่อม Wallet ของผู้รับเพื่อดูรายการ");
+    if (button.disabled) return;
+    button.disabled = true;
+    message(result, "กำลังโหลด...");
+    try {
+      const contract = readConnection();
+      const count = await contract.certificateCount(account);
+      if (count === 0n) return message(result, "ยังไม่มีใบรับรองสำหรับ Wallet นี้");
+      result.replaceChildren();
+      result.className = "";
+      for (let index = count; index > 0n; index--) {
+        const code = await contract.certificateCodeAt(account, index - 1n);
+        const certificate = await contract.getCertificate(code);
+        const course = await contract.getCourse(certificate.courseCode);
+        const card = renderCertificate(result, code, certificate, course);
+        if (/^https?:$/.test(location.protocol)) showQr(addText(card, "div", ""), code);
+      }
+    } catch (error) {
+      message(result, errorText(error), "error");
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  $("connectButton").addEventListener("click", connectWallet);
+  $("dashboardButton").addEventListener("click", loadDashboard);
+  $("verifyForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = event.currentTarget.querySelector("button");
+    if (button.disabled) return;
+    button.disabled = true;
+    try { await verify(); } finally { button.disabled = false; }
+  });
+  $("qrButton").addEventListener("click", () => {
+    try {
+      showQr($("issueQr"), codeFrom(value("issueCode")));
+    } catch (error) {
+      message($("issueQr"), errorText(error), "error");
+    }
+  });
+  $("issueCode").addEventListener("input", () => $("issueQr").replaceChildren());
+
+  $("courseForm").addEventListener("submit", event => {
+    event.preventDefault();
+    const button = event.submitter;
+    return transact(button, $("courseMessage"), () =>
+      writeContract.createCourse(codeFrom(value("courseCode")), value("courseTitle"), value("courseDetails")));
+  });
+  $("issuerForm").addEventListener("submit", event => {
+    event.preventDefault();
+    const button = event.submitter;
+    return transact(button, $("issuerMessage"), () =>
+      writeContract.setIssuer(addressFrom("issuerAddress"), button.value === "grant"));
+  });
+  $("issueForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const succeeded = await transact(event.submitter, $("issueMessage"), async () => {
+      const code = codeFrom(value("issueCode"));
+      const course = codeFrom(value("issueCourse"));
+      const recipient = addressFrom("issueRecipient");
+      const documentHash = await hashPdf($("issueFile").files[0]);
+      return writeContract.issueCertificate(code, course, recipient, documentHash);
+    });
+    if (succeeded) await loadDashboard();
+  });
+  $("revokeForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!confirm("ยืนยันเพิกถอนใบรับรองนี้?")) return;
+    const succeeded = await transact(event.submitter, $("revokeMessage"), () =>
+      writeContract.revokeCertificate(codeFrom(value("revokeCode"))));
+    if (succeeded) await loadDashboard();
+  });
+
+  window.ethereum?.on?.("accountsChanged", () => location.reload());
+  window.ethereum?.on?.("chainChanged", () => location.reload());
+  const linkedCode = new URLSearchParams(location.search).get("cert");
+  if (linkedCode) {
+    $("verifyCode").value = linkedCode;
+    $("verifyForm").requestSubmit();
+  }
+</script>
+</body>
+</html>
